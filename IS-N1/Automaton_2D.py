@@ -351,31 +351,32 @@ class CellularAutomaton2D:
 
     def _update_balloon(self, x, y):
         """Update balloon behavior"""
-        # Balloon rises upward
-        if self._is_empty(x, y - 1):
+        # # Balloon rises upward
+        # if self._is_empty(x, y - 1):
+        #     self.next_grid[y, x] = EMPTY
+        #     self.next_grid[y - 1, x] = BALLOON
+        # # If can't move up, try diagonal
+        # elif self._is_empty(x - 1, y - 1) or self._is_empty(x + 1, y - 1):
+        #     options = []
+        #     if self._is_empty(x - 1, y - 1):
+        #         options.append((x - 1, y - 1))
+        #     if self._is_empty(x + 1, y - 1):
+        #         options.append((x + 1, y - 1))
+        #
+        #     if options:
+        #         nx, ny = random.choice(options)
+        #         self.next_grid[y, x] = EMPTY
+        #         self.next_grid[ny, nx] = BALLOON
+
+        directions = [(0, -1), (-1, -1), (1, -1)]  # Up, Up-left, Up-right
+        random.shuffle(directions)
+        dx, dy = directions[0]
+        nx, ny = x + dx, y + dy
+        if self._is_empty(nx, ny):
             self.next_grid[y, x] = EMPTY
-            self.next_grid[y - 1, x] = BALLOON
-        # If can't move up, try diagonal
-        elif self._is_empty(x - 1, y - 1) or self._is_empty(x + 1, y - 1):
-            options = []
-            if self._is_empty(x - 1, y - 1):
-                options.append((x - 1, y - 1))
-            if self._is_empty(x + 1, y - 1):
-                options.append((x + 1, y - 1))
-
-            if options:
-                nx, ny = random.choice(options)
-                self.next_grid[y, x] = EMPTY
-                self.next_grid[ny, nx] = BALLOON
-
-        # Balloon pops if it encounters fire
-        for dy in [-1, 0, 1]:
-            for dx in [-1, 0, 1]:
-                nx, ny = x + dx, y + dy
-                if (0 <= nx < self.width and 0 <= ny < self.height and
-                        int(self.grid[ny, nx]) == FIRE):
-                    self.next_grid[y, x] = EMPTY
-                    break
+            self.next_grid[ny, nx] = BALLOON
+        else:
+            self.next_grid[y, x] = EMPTY
 
     def add_element(self, x, y, element_type):
         """Add an element at the specified position"""
