@@ -333,100 +333,99 @@ class CellularAutomaton2D:
         #     self.next_grid[y, x] = LIGHT_SMOKE
 
     def _update_water(self, x, y):
-        """Update water behavior with realistic fluid dynamics"""
+        """Update water behavior with complete conservation of mass"""
         water_amount = self.grid[y, x]
-        WATER_MINIMUM = 8.0  # Absolute minimum for water to exist
-        WATER_THRESHOLD = 8.3  # Threshold below which water tries to move out
+        MIN_WATER = 8.0
+        MAX_WATER = 16.0
 
-        # Skip if the amount is outside valid range (safeguard)
-        if water_amount < WATER_MINIMUM or water_amount > 16:
-            self.next_grid[y, x] = WATER_MINIMUM
+        # Validate water amount
+        if water_amount < MIN_WATER or water_amount > MAX_WATER:
+            self.next_grid[y, x] = MIN_WATER
             return
 
-        # If water is below threshold, try to transfer it completely
-        if water_amount < WATER_THRESHOLD + 0.5:
-            # Check if there's space below to transfer to
-            if y + 1 < self.height:
-                if self.next_grid[y + 1, x] == EMPTY:
-                    # Empty below - transfer all water down
-                    self.next_grid[y, x] = EMPTY
-                    self.next_grid[y + 1, x] = water_amount
-                    return
-                elif self.next_grid[y + 1, x] >= WATER_MINIMUM:
-                    # Water below - add our water to it
-                    if self.next_grid[y + 1, x] + water_amount - WATER_MINIMUM > 16:
-                        self.next_grid[y, x] = water_amount - WATER_MINIMUM
-                        self.next_grid[y + 1, x] = 16
-                    else:
-                        self.next_grid[y, x] = EMPTY
-                        self.next_grid[y + 1, x] += water_amount - WATER_MINIMUM
-                    return
-
-            # Can't transfer down - just remove minimal water
-            # self.next_grid[y, x] = EMPTY
-            return
-
-        # Check if there's empty space below (direct flow down)
+        # 1. DOWNWARD FLOW: Always prioritize flowing down if possible
         if self._is_empty(x, y + 1):
             self.next_grid[y, x] = EMPTY
             self.next_grid[y + 1, x] = water_amount
             return
 
-        # Check for pressure equalization with water below - prioritize filling bottom
-        if y + 1 < self.height and self.grid[y + 1, x] >= WATER_MINIMUM:
-            below_amount = self.grid[y + 1, x]
-            if water_amount > below_amount + 0.1:
-                # Transfer more aggressively to bottom cells (1/2 instead of 1/4)
-                transfer = min((water_amount - below_amount) / 2, water_amount - WATER_MINIMUM)
-                if transfer > 0.05:
+        # 2. HANDLE LOW WATER AMOUNTS (Fix for disappearing water)
+        if water_amount < MIN_WATER + 0.5:
+            if y + 1 < self.height and self.next_grid[y + 1, x] >= MIN_WATER:
+                # Water below - add our water to it (conserve mass)
+                below_amount = self.next_grid[y + 1, x]
+                if below_amount + (water_amount - MIN_WATER) > MAX_WATER:
+                    # Can't fit all excess below, keep some here
+                    transfer = MAX_WATER - below_amount
                     self.next_grid[y, x] = water_amount - transfer
-                    self.next_grid[y + 1, x] = min(16, below_amount + transfer)
-                    return
-
-        # Try horizontal flow only if water amount is sufficient
-        if water_amount > WATER_THRESHOLD + 0.5:
-            left_empty = self._is_empty(x - 1, y)
-            right_empty = self._is_empty(x + 1, y)
-
-            if left_empty or right_empty:
-                # Calculate how much water can be distributed
-                excess = water_amount - WATER_THRESHOLD  # Amount above threshold
-
-                if left_empty and right_empty:
-                    # Split equally to both sides
-                    self.next_grid[y, x] = WATER_THRESHOLD
-                    self.next_grid[y, x - 1] = WATER_MINIMUM + excess / 2
-                    self.next_grid[y, x + 1] = WATER_MINIMUM + excess / 2
-                elif left_empty:
-                    # Split between current and left
-                    self.next_grid[y, x] = WATER_THRESHOLD
-                    self.next_grid[y, x - 1] = WATER_MINIMUM + excess
-                elif right_empty:
-                    # Split between current and right
-                    self.next_grid[y, x] = WATER_THRESHOLD
-                    self.next_grid[y, x + 1] = WATER_MINIMUM + excess
+                    self.next_grid[y + 1, x] = MAX_WATER
+                else:
+                    # Transfer all excess
+                    self.next_grid[y, x] = EMPTY
+                    self.next_grid[y + 1, x] = below_amount + (water_amount - MIN_WATER)
+                return
+            else:
+                # Can't transfer down - water stays in place (fix water disappearance)
+                self.next_grid[y, x] = water_amount
                 return
 
-        # Try pressure equalization with water at sides
+        # 3. PRESSURE EQUALIZATION WITH WATER BELOW (lower threshold to 0.1)
+        if y + 1 < self.height and self.next_grid[y + 1, x] >= MIN_WATER:
+            below_amount = self.next_grid[y + 1, x]
+            if water_amount > below_amount + 0.1:  # Reduced threshold
+                transfer = min((water_amount - below_amount) / 2, water_amount - MIN_WATER)
+                if transfer > 0.01:  # Reduced threshold
+                    # Ensure water conservation when transferring to bottom
+                    if below_amount + transfer > MAX_WATER:
+                        excess = below_amount + transfer - MAX_WATER
+                        self.next_grid[y, x] = water_amount - transfer + excess
+                        self.next_grid[y + 1, x] = MAX_WATER
+                    else:
+                        self.next_grid[y, x] = water_amount - transfer
+                        self.next_grid[y + 1, x] = below_amount + transfer
+                    return
+
+        # 4. HORIZONTAL FLOW (with lower threshold)
+        left_empty = self._is_empty(x - 1, y)
+        right_empty = self._is_empty(x + 1, y)
+
+        if left_empty or right_empty:
+            # Lower threshold for excess calculation
+            excess = water_amount - MIN_WATER
+
+            if excess > 0.1:  # Allow smaller excess to flow
+                if left_empty and right_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 3
+                    self.next_grid[y, x - 1] = MIN_WATER + excess / 3
+                    self.next_grid[y, x + 1] = MIN_WATER + excess / 3
+                elif left_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 2
+                    self.next_grid[y, x - 1] = MIN_WATER + excess / 2
+                elif right_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 2
+                    self.next_grid[y, x + 1] = MIN_WATER + excess / 2
+                return
+
+        # 5. EQUALIZE WITH EXISTING WATER AT SIDES (lower threshold)
         for dx in [-1, 1]:
             nx = x + dx
             if not self._is_within_bounds(nx, y):
                 continue
 
-            if self.grid[y, nx] >= WATER_MINIMUM:
-                side_amount = self.grid[y, nx]
-                if water_amount > side_amount + 0.4:
+            if self.next_grid[y, nx] >= MIN_WATER:
+                side_amount = self.next_grid[y, nx]
+                if water_amount > side_amount + 0.1:  # Reduced threshold
                     transfer = (water_amount - side_amount) / 3
-                    if transfer > 0.2:  # Higher threshold for side transfer
+                    if transfer > 0.01:  # Reduced threshold
                         self.next_grid[y, x] = water_amount - transfer
                         self.next_grid[y, nx] = side_amount + transfer
                         return
 
-        # Try upward flow if water is under high pressure
-        if water_amount > 14 and y > 0 and self._is_empty(x, y - 1):
-            upward_flow = min(water_amount - 13, 2)
+        # 6. UPWARD FLOW (slightly lower threshold)
+        if water_amount > 13.5 and y > 0 and self._is_empty(x, y - 1):
+            upward_flow = min(water_amount - 13, 1.5)
             self.next_grid[y, x] = water_amount - upward_flow
-            self.next_grid[y - 1, x] = WATER_MINIMUM + upward_flow
+            self.next_grid[y - 1, x] = MIN_WATER + upward_flow
             return
 
         # Water stays in place if no other rules apply
