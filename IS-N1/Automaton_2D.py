@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib
+
 matplotlib.use('TkAgg')  # better interactivity
 import matplotlib.pyplot as plt
 import random
@@ -170,50 +171,98 @@ class CellularAutomaton2D:
         if self._is_empty(x, y + 1):
             self.next_grid[y, x] = EMPTY
             self.next_grid[y + 1, x] = WOOD
-            # return  # Wood moved, stop checking for fire
-            y += 1
+            return  # Wood moved, stop checking for fire
+            # y += 1
 
-        # Check if wood is on fire
-        fire_nearby = False
-        for dy in [-1, 0, 1]:
-            for dx in [-1, 0, 1]:
-                nx, ny = x + dx, y + dy
-                if (0 <= nx < self.width and 0 <= ny < self.height and
-                        int(self.grid[ny, nx]) == FIRE):
-                    fire_nearby = True
-                    break
-            if fire_nearby:
-                break
-
-        # Wood catches fire with some probability if fire is nearby
-        # if fire_nearby and random.random() < 0.15:
-        if fire_nearby:
-            self.next_grid[y, x] = FIRE
+        # # Check if wood is on fire
+        # fire_nearby = False
+        # for dy in [-1, 0, 1]:
+        #     for dx in [-1, 0, 1]:
+        #         nx, ny = x + dx, y + dy
+        #         if (0 <= nx < self.width and 0 <= ny < self.height and
+        #                 int(self.grid[ny, nx]) == FIRE):
+        #             fire_nearby = True
+        #             break
+        #     if fire_nearby:
+        #         break
+        #
+        # # Wood catches fire with some probability if fire is nearby
+        # # if fire_nearby and random.random() < 0.15:
+        # if fire_nearby:
+        #     self.next_grid[y, x] = FIRE
 
     def _update_fire(self, x, y):
         """Update fire behavior"""
         # Fire burns out after a while
-        if random.random() < 0.1:
-            self.next_grid[y, x] = EMPTY
-            # Create smoke when fire burns out
-            if self._is_empty(x, y - 1) and random.random() < 0.7:
-                self.next_grid[y - 1, x] = DARK_SMOKE
-                self.smoke_lifetimes[(x, y - 1)] = random.randint(10, 20)
+        # if random.random() < 0.1:
+        #     self.next_grid[y, x] = EMPTY
+        #
+        #     # Create smoke when fire burns out
+        #     if self._is_empty(x, y - 1):
+        #         # Check if fire landed on a flammable element
+        #         has_flammable_nearby = False
+        #         for dy in [-1, 0, 1]:
+        #             for dx in [-1, 0, 1]:
+        #                 nx, ny = x + dx, y + dy
+        #                 if (0 <= nx < self.width and 0 <= ny < self.height and
+        #                         int(self.grid[ny, nx]) == WOOD):
+        #                     has_flammable_nearby = True
+        #                     break
+        #             if has_flammable_nearby:
+        #                 break
+        #
+        #         # Dark smoke if near flammable, light smoke otherwise
+        #         if has_flammable_nearby:
+        #             self.next_grid[y - 1, x] = DARK_SMOKE
+        #         else:
+        #             self.next_grid[y - 1, x] = LIGHT_SMOKE
+        #
+        #         self.smoke_lifetimes[(x, y - 1)] = random.randint(10, 20)
+        #     return
 
-        # Fire spreads to adjacent wood
-        for dy in [-1, 0, 1]:
-            for dx in [-1, 0, 1]:
-                nx, ny = x + dx, y + dy
-                if (0 <= nx < self.width and 0 <= ny < self.height and
-                        int(self.grid[ny, nx]) == WOOD and random.random() < 0.08):
-                    self.next_grid[ny, nx] = FIRE
+        # Check if wood below
+        if (0 <= y + 1 < self.height and int(self.grid[y + 1, x]) == WOOD):
+            self.next_grid[y + 1, x] = FIRE
+            self.next_grid[y, x] = DARK_SMOKE
+            return
+
+        # Fire tries to move randomly downward when possible
+        directions = [(0, 1), (-1, 1), (1, 1)]  # Down, Down-left, Down-right
+        random.shuffle(directions)
+
+        moved = False
+        for dx, dy in directions:
+            nx, ny = x + dx, y + dy
+            if self._is_empty(nx, ny):
+                self.next_grid[y, x] = EMPTY
+                self.next_grid[ny, nx] = FIRE
+                moved = True
+                break
+
+        # # If fire couldn't move, it can still spread to adjacent wood
+        # if not moved:
+        #     for dy in [-1, 0, 1]:
+        #         for dx in [-1, 0, 1]:
+        #             nx, ny = x + dx, y + dy
+        #             if (0 <= nx < self.width and 0 <= ny < self.height and
+        #                     int(self.grid[ny, nx]) == WOOD and random.random() < 0.08):
+        #                 self.next_grid[ny, nx] = FIRE
+
+        # Fire did not move
+        if not moved:
+            # Check if wood below
+            if (0 <= y + 1 < self.height and int(self.grid[y + 1, x]) == WOOD):
+                self.next_grid[y + 1, x] = FIRE
+                self.next_grid[y, x] = DARK_SMOKE
+            else:
+                self.next_grid[y, x] = LIGHT_SMOKE
 
     def _update_smoke(self, x, y, smoke_type):
         """Update smoke behavior"""
         # Smoke rises upward
         directions = [(0, -1), (-1, -1), (1, -1)]  # Up, Up-left, Up-right
         random.shuffle(directions)
-
+        nx, ny = 0, 0
         moved = False
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
@@ -226,14 +275,44 @@ class CellularAutomaton2D:
                     self.smoke_lifetimes[(nx, ny)] = self.smoke_lifetimes[(x, y)]
                     del self.smoke_lifetimes[(x, y)]
                 else:
-                    self.smoke_lifetimes[(nx, ny)] = random.randint(10, 20)
+                    # Create new lifetime
+                    if smoke_type == DARK_SMOKE:
+                        self.smoke_lifetimes[(nx, ny)] = random.randint(10, 20)
+                    else:
+                        self.smoke_lifetimes[(nx, ny)] = random.randint(7, 10)
 
                 moved = True
                 break
 
-        # Dark smoke can turn to light smoke
-        if not moved and smoke_type == DARK_SMOKE and random.random() < 0.1:
-            self.next_grid[y, x] = LIGHT_SMOKE
+        # If can't move upward, try sideways
+        if not moved:
+            sideways = [(-1, 0), (1, 0)]  # Left, Right
+            random.shuffle(sideways)
+
+            for dx, dy in sideways:
+                nx, ny = x + dx, y + dy
+                if self._is_empty(nx, ny):
+                    self.next_grid[y, x] = EMPTY
+                    self.next_grid[ny, nx] = smoke_type
+
+                    moved = True
+                    break
+
+        if moved:
+            # Transfer the lifetime
+            if (x, y) in self.smoke_lifetimes:
+                self.smoke_lifetimes[(nx, ny)] = self.smoke_lifetimes[(x, y)]
+                del self.smoke_lifetimes[(x, y)]
+            else:
+                # Create new lifetime
+                if smoke_type == DARK_SMOKE:
+                    self.smoke_lifetimes[(nx, ny)] = random.randint(10, 20)
+                else:
+                    self.smoke_lifetimes[(nx, ny)] = random.randint(7, 10)
+
+        # # Dark smoke can turn to light smoke
+        # if not moved and smoke_type == DARK_SMOKE and random.random() < 0.1:
+        #     self.next_grid[y, x] = LIGHT_SMOKE
 
     def _update_water(self, x, y):
         """Update water behavior"""
@@ -305,7 +384,13 @@ class CellularAutomaton2D:
 
             # Initialize smoke lifetime if needed
             if element_type in [DARK_SMOKE, LIGHT_SMOKE]:
-                self.smoke_lifetimes[(x, y)] = random.randint(10, 20)
+                # self.smoke_lifetimes[(x, y)] = random.randint(10, 20)
+
+                # Create new lifetime
+                if element_type == DARK_SMOKE:
+                    self.smoke_lifetimes[(x, y)] = random.randint(10, 20)
+                elif element_type == LIGHT_SMOKE:
+                    self.smoke_lifetimes[(x, y)] = random.randint(7, 10)
 
 
 def run_simulation(width, height):
@@ -402,7 +487,7 @@ def run_simulation(width, height):
         return True  # Keep the timer running
 
     # Create a timer for regular updates
-    timer = fig.canvas.new_timer(interval=100)  # Update every 100ms
+    timer = fig.canvas.new_timer(interval=500)  # Update every 100ms
     timer.add_callback(update_frame)
     timer.start()
 
