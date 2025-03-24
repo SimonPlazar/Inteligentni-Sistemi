@@ -344,7 +344,7 @@ class CellularAutomaton2D:
             return
 
         # If water is below threshold, try to transfer it completely
-        if water_amount < WATER_THRESHOLD:
+        if water_amount < WATER_THRESHOLD + 0.5:
             # Check if there's space below to transfer to
             if y + 1 < self.height:
                 if self.next_grid[y + 1, x] == EMPTY:
@@ -354,12 +354,16 @@ class CellularAutomaton2D:
                     return
                 elif self.next_grid[y + 1, x] >= WATER_MINIMUM:
                     # Water below - add our water to it
-                    self.next_grid[y, x] = EMPTY
-                    self.next_grid[y + 1, x] = min(16, self.next_grid[y + 1, x] + water_amount - WATER_MINIMUM)
+                    if self.next_grid[y + 1, x] + water_amount - WATER_MINIMUM > 16:
+                        self.next_grid[y, x] = water_amount - WATER_MINIMUM
+                        self.next_grid[y + 1, x] = 16
+                    else:
+                        self.next_grid[y, x] = EMPTY
+                        self.next_grid[y + 1, x] += water_amount - WATER_MINIMUM
                     return
 
             # Can't transfer down - just remove minimal water
-            self.next_grid[y, x] = EMPTY
+            # self.next_grid[y, x] = EMPTY
             return
 
         # Check if there's empty space below (direct flow down)
@@ -403,7 +407,6 @@ class CellularAutomaton2D:
                     self.next_grid[y, x + 1] = WATER_MINIMUM + excess
                 return
 
-        # Rest of the method (side pressure, upward flow, etc.) remains the same
         # Try pressure equalization with water at sides
         for dx in [-1, 1]:
             nx = x + dx
@@ -412,7 +415,7 @@ class CellularAutomaton2D:
 
             if self.grid[y, nx] >= WATER_MINIMUM:
                 side_amount = self.grid[y, nx]
-                if water_amount > side_amount + 1.0:  # Only equalize larger differences
+                if water_amount > side_amount + 0.4:
                     transfer = (water_amount - side_amount) / 3
                     if transfer > 0.2:  # Higher threshold for side transfer
                         self.next_grid[y, x] = water_amount - transfer
