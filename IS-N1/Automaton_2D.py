@@ -391,18 +391,18 @@ class CellularAutomaton2D:
 
         if left_empty or right_empty:
             excess = water_amount - MIN_WATER
-
-            if left_empty and right_empty:
-                self.next_grid[y, x] = MIN_WATER + excess / 3
-                self.next_grid[y, x - 1] = MIN_WATER + excess / 3
-                self.next_grid[y, x + 1] = MIN_WATER + excess / 3
-            elif left_empty:
-                self.next_grid[y, x] = MIN_WATER + excess / 2
-                self.next_grid[y, x - 1] = MIN_WATER + excess / 2
-            elif right_empty:
-                self.next_grid[y, x] = MIN_WATER + excess / 2
-                self.next_grid[y, x + 1] = MIN_WATER + excess / 2
-            return
+            if excess > 0.5:
+                if left_empty and right_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 3
+                    self.next_grid[y, x - 1] = MIN_WATER + excess / 3
+                    self.next_grid[y, x + 1] = MIN_WATER + excess / 3
+                elif left_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 2
+                    self.next_grid[y, x - 1] = MIN_WATER + excess / 2
+                elif right_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 2
+                    self.next_grid[y, x + 1] = MIN_WATER + excess / 2
+                return
 
         # # 5. EQUALIZE WITH EXISTING WATER AT SIDES
         # for dx in [-1, 1]:
