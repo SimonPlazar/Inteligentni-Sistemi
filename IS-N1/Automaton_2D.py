@@ -15,22 +15,17 @@ FIRE = 4
 DARK_SMOKE = 5
 LIGHT_SMOKE = 6
 BALLOON = 7
-WATER = 8  # Water values ≥ WATER for different amounts
-# WATER = 15
+WATER = 8 # Water values from 8 to 15
 
 # Colors for visualization
 COLORS = {
-    # EMPTY: (0, 0, 0),  # Black
-    # EMPTY: (1, 1, 1),  # White
     EMPTY: (0.5, 0.5, 0.5),  # Gray
-    # WALL: (0.5, 0.5, 0.5),  # Gray
     WALL: (0.0, 0.0, 0.0),  # Black
     SAND: (0.9, 0.8, 0.2),  # Yellow
     WOOD: (0.6, 0.3, 0.1),  # Brown
     FIRE: (1.0, 0.0, 0.0),  # Red
     DARK_SMOKE: (0.3, 0.3, 0.3),  # Dark Gray
     LIGHT_SMOKE: (0.7, 0.7, 0.7),  # Light Gray
-    # WATER: (0.0, 0.0, 1.0),  # Blue
     BALLOON: (1.0, 0.0, 1.0),  # Magenta
 }
 
@@ -190,56 +185,12 @@ class CellularAutomaton2D:
             self.next_grid[y, x] = EMPTY
             self.next_grid[y + 1, x] = WOOD
             return  # Wood moved, stop checking for fire
-            # y += 1
-
-        # # Check if wood is on fire
-        # fire_nearby = False
-        # for dy in [-1, 0, 1]:
-        #     for dx in [-1, 0, 1]:
-        #         nx, ny = x + dx, y + dy
-        #         if (0 <= nx < self.width and 0 <= ny < self.height and
-        #                 int(self.grid[ny, nx]) == FIRE):
-        #             fire_nearby = True
-        #             break
-        #     if fire_nearby:
-        #         break
-        #
-        # # Wood catches fire with some probability if fire is nearby
-        # # if fire_nearby and random.random() < 0.15:
-        # if fire_nearby:
-        #     self.next_grid[y, x] = FIRE
 
     def _update_fire(self, x, y):
         """Update fire behavior"""
-        # Fire burns out after a while
-        # if random.random() < 0.1:
-        #     self.next_grid[y, x] = EMPTY
-        #
-        #     # Create smoke when fire burns out
-        #     if self._is_empty(x, y - 1):
-        #         # Check if fire landed on a flammable element
-        #         has_flammable_nearby = False
-        #         for dy in [-1, 0, 1]:
-        #             for dx in [-1, 0, 1]:
-        #                 nx, ny = x + dx, y + dy
-        #                 if (0 <= nx < self.width and 0 <= ny < self.height and
-        #                         int(self.grid[ny, nx]) == WOOD):
-        #                     has_flammable_nearby = True
-        #                     break
-        #             if has_flammable_nearby:
-        #                 break
-        #
-        #         # Dark smoke if near flammable, light smoke otherwise
-        #         if has_flammable_nearby:
-        #             self.next_grid[y - 1, x] = DARK_SMOKE
-        #         else:
-        #             self.next_grid[y - 1, x] = LIGHT_SMOKE
-        #
-        #         self.smoke_lifetimes[(x, y - 1)] = random.randint(10, 20)
-        #     return
 
         # Check if wood below
-        if (0 <= y + 1 < self.height and int(self.grid[y + 1, x]) == WOOD):
+        if 0 <= y + 1 < self.height and int(self.grid[y + 1, x]) == WOOD:
             self.next_grid[y + 1, x] = FIRE
             self.next_grid[y, x] = DARK_SMOKE
             return
@@ -256,15 +207,6 @@ class CellularAutomaton2D:
                 self.next_grid[ny, nx] = FIRE
                 moved = True
                 break
-
-        # # If fire couldn't move, it can still spread to adjacent wood
-        # if not moved:
-        #     for dy in [-1, 0, 1]:
-        #         for dx in [-1, 0, 1]:
-        #             nx, ny = x + dx, y + dy
-        #             if (0 <= nx < self.width and 0 <= ny < self.height and
-        #                     int(self.grid[ny, nx]) == WOOD and random.random() < 0.08):
-        #                 self.next_grid[ny, nx] = FIRE
 
         # Fire did not move
         if not moved:
@@ -328,48 +270,19 @@ class CellularAutomaton2D:
                 else:
                     self.smoke_lifetimes[(nx, ny)] = random.randint(7, 10)
 
-        # # Dark smoke can turn to light smoke
-        # if not moved and smoke_type == DARK_SMOKE and random.random() < 0.1:
-        #     self.next_grid[y, x] = LIGHT_SMOKE
-
     def _update_water(self, x, y):
         """Update water behavior with complete conservation of mass"""
         water_amount = self.grid[y, x]
         MIN_WATER = 8.0
         MAX_WATER = 15.0
 
-        # # Validate water amount
-        # if water_amount < MIN_WATER or water_amount > MAX_WATER:
-        #     self.next_grid[y, x] = MIN_WATER
-        #     return
-
-        # 1. DOWNWARD FLOW
+        # DOWNWARD FLOW
         if self._is_empty(x, y + 1):
             self.next_grid[y, x] = EMPTY
             self.next_grid[y + 1, x] = water_amount
             return
 
-        # # 2. HANDLE LOW WATER AMOUNTS
-        # if water_amount < MIN_WATER + 0.5:
-        #     if y + 1 < self.height and self.next_grid[y + 1, x] >= MIN_WATER:
-        #         # Water below, add this water to it
-        #         below_amount = self.next_grid[y + 1, x]
-        #         if below_amount + (water_amount - MIN_WATER) > MAX_WATER:
-        #             # Can't fit all excess below, keep some here
-        #             transfer = MAX_WATER - below_amount
-        #             self.next_grid[y, x] = water_amount - transfer
-        #             self.next_grid[y + 1, x] = MAX_WATER
-        #         else:
-        #             # Transfer all excess
-        #             self.next_grid[y, x] = EMPTY
-        #             self.next_grid[y + 1, x] = below_amount + (water_amount - MIN_WATER)
-        #         return
-        #     else:
-        #         # Can't transfer down - water stays in place
-        #         self.next_grid[y, x] = water_amount
-        #         return
-
-        # 3. PRESSURE EQUALIZATION WITH WATER BELOW
+        # PRESSURE EQUALIZATION WITH WATER BELOW
         if y + 1 < self.height and MIN_WATER <= self.next_grid[y + 1, x] < MAX_WATER:
             # Water below, add this water to it
             below_amount = self.next_grid[y + 1, x]
@@ -385,7 +298,7 @@ class CellularAutomaton2D:
                 self.next_grid[y + 1, x] = below_amount + (water_amount - MIN_WATER)
             return
 
-        # 4. HORIZONTAL FLOW
+        # HORIZONTAL FLOW
         left_empty = self._is_empty(x - 1, y)
         right_empty = self._is_empty(x + 1, y)
 
@@ -404,28 +317,10 @@ class CellularAutomaton2D:
                     self.next_grid[y, x + 1] = MIN_WATER + excess / 2
                 return
 
-        # # 5. EQUALIZE WITH EXISTING WATER AT SIDES
-        # for dx in [-1, 1]:
-        #     nx = x + dx
-        #     if not self._is_within_bounds(nx, y):
-        #         continue
-        #
-        #     if self.next_grid[y, nx] >= MIN_WATER:
-        #         side_amount = self.next_grid[y, nx]
-        #         if water_amount > side_amount + 0.1:
-        #             transfer = (water_amount - side_amount) / 3
-        #             if transfer > 0.01:
-        #                 self.next_grid[y, x] = water_amount - transfer
-        #                 self.next_grid[y, nx] = side_amount + transfer
-        #
-        #
-        #
-
-        # 5. EQUALIZE WITH EXISTING WATER AT SIDES
-        # Collect information about water cells at sides
+        # EQUALIZE WITH EXISTING WATER AT SIDES
         side_cells = []
         total_water = water_amount
-        cells_count = 1  # Start with current cell
+        cells_count = 1
 
         for dx in [-1, 1]:
             nx = x + dx
@@ -447,35 +342,10 @@ class CellularAutomaton2D:
 
             return
 
-        # # 6. UPWARD FLOW (slightly lower threshold)
-        # if water_amount > 13.5 and y > 0 and self._is_empty(x, y - 1):
-        #     upward_flow = min(water_amount - 13, 1.5)
-        #     self.next_grid[y, x] = water_amount - upward_flow
-        #     self.next_grid[y - 1, x] = MIN_WATER + upward_flow
-        #     return
-
-        # Water stays in place if no other rules apply
         self.next_grid[y, x] = water_amount
 
     def _update_balloon(self, x, y):
         """Update balloon behavior"""
-        # # Balloon rises upward
-        # if self._is_empty(x, y - 1):
-        #     self.next_grid[y, x] = EMPTY
-        #     self.next_grid[y - 1, x] = BALLOON
-        # # If can't move up, try diagonal
-        # elif self._is_empty(x - 1, y - 1) or self._is_empty(x + 1, y - 1):
-        #     options = []
-        #     if self._is_empty(x - 1, y - 1):
-        #         options.append((x - 1, y - 1))
-        #     if self._is_empty(x + 1, y - 1):
-        #         options.append((x + 1, y - 1))
-        #
-        #     if options:
-        #         nx, ny = random.choice(options)
-        #         self.next_grid[y, x] = EMPTY
-        #         self.next_grid[ny, nx] = BALLOON
-
         directions = [(0, -1), (-1, -1), (1, -1)]  # Up, Up-left, Up-right
         random.shuffle(directions)
         dx, dy = directions[0]
@@ -498,8 +368,6 @@ class CellularAutomaton2D:
 
             # Initialize smoke lifetime if needed
             if element_type in [DARK_SMOKE, LIGHT_SMOKE]:
-                # self.smoke_lifetimes[(x, y)] = random.randint(10, 20)
-
                 # Create new lifetime
                 if element_type == DARK_SMOKE:
                     self.smoke_lifetimes[(x, y)] = random.randint(10, 20)
@@ -529,7 +397,7 @@ def run_simulation(width, height):
 
     # Create buttons
     buttons = {}
-    selected_element = [SAND]  # Use list to allow modification from closures
+    selected_element = [SAND]
 
     def create_button_callback(elem_type):
         def callback(event):
