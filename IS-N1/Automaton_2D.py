@@ -15,7 +15,7 @@ FIRE = 4
 DARK_SMOKE = 5
 LIGHT_SMOKE = 6
 BALLOON = 7
-WATER = 8 # Water values from 8 to 15
+WATER = 8  # Water values from 8 to 15
 
 # Colors for visualization
 COLORS = {
@@ -44,7 +44,7 @@ def get_water_color(value):
     g = light_blue[1] + normalized * (dark_blue[1] - light_blue[1])
     b = light_blue[2] + normalized * (dark_blue[2] - light_blue[2])
 
-    return (r, g, b)
+    return r, g, b
 
 
 class CellularAutomaton2D:
@@ -54,6 +54,7 @@ class CellularAutomaton2D:
         self.grid = np.zeros((height, width), dtype=float)
         self.next_grid = np.zeros((height, width), dtype=float)
         self.smoke_lifetimes = {}  # Track smoke lifetimes
+        self.coordinates = []
 
     def generate_cave(self, fill_ratio=0.45, iterations=15):
         """Generate a cave using B678/S2345678 rule"""
@@ -61,7 +62,7 @@ class CellularAutomaton2D:
         for y in range(self.height):
             for x in range(self.width):
                 # Create border walls
-                if (x == 0 or x == self.width - 1 or y == 0 or y == self.height - 1):
+                if x == 0 or x == self.width - 1 or y == 0 or y == self.height - 1:
                     self.grid[y, x] = WALL
                 # Random fill based on ratio
                 elif random.random() < fill_ratio:
@@ -108,10 +109,10 @@ class CellularAutomaton2D:
         self.next_grid = self.grid.copy()
 
         # Process cells in random order to avoid directional bias
-        coordinates = [(x, y) for y in range(self.height) for x in range(self.width)]
-        random.shuffle(coordinates)
+        self.coordinates = [(x, y) for y in range(self.height) for x in range(self.width)]
+        random.shuffle(self.coordinates)
 
-        for x, y in coordinates:
+        for x, y in self.coordinates:
             cell_type = int(self.grid[y, x])
 
             # Skip empty cells and walls
@@ -160,12 +161,19 @@ class CellularAutomaton2D:
 
     def _update_sand(self, x, y):
         """Update sand behavior"""
-        # Try to move down
+        # Move down
         if self._is_empty(x, y + 1):
             self.next_grid[y, x] = EMPTY
             self.next_grid[y + 1, x] = SAND
-        # If can't move down, try diagonal
-        elif (self._is_empty(x - 1, y + 1) or self._is_empty(x + 1, y + 1)):
+
+        # Displace water below
+        elif 0 <= y + 1 < self.height and int(self.grid[y + 1, x]) >= WATER:
+            self.next_grid[y, x] = self.grid[y + 1, x]
+            self.next_grid[y + 1, x] = SAND
+            self.coordinates.remove((x, y + 1))
+
+        # Move diagonal
+        elif self._is_empty(x - 1, y + 1) or self._is_empty(x + 1, y + 1):
             self.next_grid[y, x] = EMPTY
 
             options = []
@@ -211,7 +219,7 @@ class CellularAutomaton2D:
         # Fire did not move
         if not moved:
             # Check if wood below
-            if (0 <= y + 1 < self.height and int(self.grid[y + 1, x]) == WOOD):
+            if 0 <= y + 1 < self.height and int(self.grid[y + 1, x]) == WOOD:
                 self.next_grid[y + 1, x] = FIRE
                 self.next_grid[y, x] = DARK_SMOKE
             else:
@@ -219,7 +227,7 @@ class CellularAutomaton2D:
 
     def _update_smoke(self, x, y, smoke_type):
         """Update smoke behavior"""
-        # Smoke rises upward
+        # Move upward
         directions = [(0, -1), (-1, -1), (1, -1)]  # Up, Up-left, Up-right
         random.shuffle(directions)
         nx, ny = 0, 0
@@ -244,7 +252,7 @@ class CellularAutomaton2D:
                 moved = True
                 break
 
-        # If can't move upward, try sideways
+        # Move sideways
         if not moved:
             sideways = [(-1, 0), (1, 0)]  # Left, Right
             random.shuffle(sideways)
@@ -358,7 +366,10 @@ class CellularAutomaton2D:
 
     def add_element(self, x, y, element_type):
         """Add an element at the specified position"""
-        if 0 <= x < self.width and 0 <= y < self.height and self.grid[y, x] != WALL:
+        if 0 <= x < self.width and 0 <= y < self.height:
+            if not self._is_empty(x, y) and element_type != EMPTY:
+                return
+
             # self.grid[y, x] = element_type
             if element_type == WATER:
                 # Random water amount between 8 and 15
@@ -386,10 +397,10 @@ def run_simulation(width, height):
 
     # Button axes
     button_axes = {}
-    elements = ["Sand", "Water", "Wood", "Fire", "Balloon", "Wall", "Clear"]
+    elements = ["Sand", "Water", "Wood", "Fire", "Balloon", "Wall", "Empty", "Clear"]
     button_height = 0.05
-    button_width = 0.1
-    spacing = 0.02
+    button_width = 0.09
+    spacing = 0.015
 
     for i, element in enumerate(elements):
         pos = [0.1 + i * (button_width + spacing), 0.01, button_width, button_height]
@@ -422,6 +433,9 @@ def run_simulation(width, height):
 
     buttons["Wall"] = Button(button_axes["Wall"], "Wall")
     buttons["Wall"].on_clicked(create_button_callback(WALL))
+
+    buttons["Empty"] = Button(button_axes["Empty"], "Empty")
+    buttons["Empty"].on_clicked(create_button_callback(EMPTY))
 
     def clear_callback(event):
         ca.grid = ca.grid * 0
@@ -462,7 +476,7 @@ def run_simulation(width, height):
         for y in range(height):
             for x in range(width):
                 cell_type = int(ca.grid[y, x])
-                if cell_type >= WATER and cell_type <= 15:
+                if WATER <= cell_type <= 15:
                     # Use dynamic water color based on value
                     rgb_grid[y, x] = get_water_color(ca.grid[y, x])
                 elif cell_type in COLORS:
@@ -472,7 +486,8 @@ def run_simulation(width, height):
         return True  # Keep the timer running
 
     # Create a timer for regular updates
-    timer = fig.canvas.new_timer(interval=500)  # Update every 100ms
+    # timer = fig.canvas.new_timer(interval=500)
+    timer = fig.canvas.new_timer(interval=100)
     timer.add_callback(update_frame)
     timer.start()
 
