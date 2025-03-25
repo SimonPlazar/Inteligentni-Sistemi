@@ -16,6 +16,7 @@ DARK_SMOKE = 5
 LIGHT_SMOKE = 6
 BALLOON = 7
 WATER = 8  # Water values ≥ WATER for different amounts
+# WATER = 15
 
 # Colors for visualization
 COLORS = {
@@ -29,9 +30,26 @@ COLORS = {
     FIRE: (1.0, 0.0, 0.0),  # Red
     DARK_SMOKE: (0.3, 0.3, 0.3),  # Dark Gray
     LIGHT_SMOKE: (0.7, 0.7, 0.7),  # Light Gray
-    WATER: (0.0, 0.0, 1.0),  # Blue
+    # WATER: (0.0, 0.0, 1.0),  # Blue
     BALLOON: (1.0, 0.0, 1.0),  # Magenta
 }
+
+
+def get_water_color(value):
+    """Get water color based on amount (8-16)"""
+    # Normalize the value between 0 (lightest) and 1 (darkest)
+    normalized = (value - 8) / 8  # Map 8-16 to 0-1
+    normalized = max(0, min(1, normalized))  # Clamp to 0-1 range
+
+    # Interpolate between light blue and dark blue
+    light_blue = (0.7, 0.85, 1.0)  # Light blue
+    dark_blue = (0.0, 0.2, 0.8)  # Dark blue
+
+    r = light_blue[0] + normalized * (dark_blue[0] - light_blue[0])
+    g = light_blue[1] + normalized * (dark_blue[1] - light_blue[1])
+    b = light_blue[2] + normalized * (dark_blue[2] - light_blue[2])
+
+    return (r, g, b)
 
 
 class CellularAutomaton2D:
@@ -315,39 +333,129 @@ class CellularAutomaton2D:
         #     self.next_grid[y, x] = LIGHT_SMOKE
 
     def _update_water(self, x, y):
-        """Update water behavior"""
+        """Update water behavior with complete conservation of mass"""
         water_amount = self.grid[y, x]
+        MIN_WATER = 8.0
+        MAX_WATER = 15.0
 
-        # Water flows down
+        # # Validate water amount
+        # if water_amount < MIN_WATER or water_amount > MAX_WATER:
+        #     self.next_grid[y, x] = MIN_WATER
+        #     return
+
+        # 1. DOWNWARD FLOW
         if self._is_empty(x, y + 1):
             self.next_grid[y, x] = EMPTY
             self.next_grid[y + 1, x] = water_amount
-        # If can't move down, try to flow sideways
-        elif not self._is_empty(x, y + 1):
-            # Try left and right
-            options = []
-            if self._is_empty(x - 1, y):
-                options.append((x - 1, y))
-            if self._is_empty(x + 1, y):
-                options.append((x + 1, y))
+            return
 
-            if options:
-                nx, ny = random.choice(options)
+        # # 2. HANDLE LOW WATER AMOUNTS
+        # if water_amount < MIN_WATER + 0.5:
+        #     if y + 1 < self.height and self.next_grid[y + 1, x] >= MIN_WATER:
+        #         # Water below, add this water to it
+        #         below_amount = self.next_grid[y + 1, x]
+        #         if below_amount + (water_amount - MIN_WATER) > MAX_WATER:
+        #             # Can't fit all excess below, keep some here
+        #             transfer = MAX_WATER - below_amount
+        #             self.next_grid[y, x] = water_amount - transfer
+        #             self.next_grid[y + 1, x] = MAX_WATER
+        #         else:
+        #             # Transfer all excess
+        #             self.next_grid[y, x] = EMPTY
+        #             self.next_grid[y + 1, x] = below_amount + (water_amount - MIN_WATER)
+        #         return
+        #     else:
+        #         # Can't transfer down - water stays in place
+        #         self.next_grid[y, x] = water_amount
+        #         return
+
+        # 3. PRESSURE EQUALIZATION WITH WATER BELOW
+        if y + 1 < self.height and MIN_WATER <= self.next_grid[y + 1, x] < MAX_WATER:
+            # Water below, add this water to it
+            below_amount = self.next_grid[y + 1, x]
+            excess = water_amount - MIN_WATER
+            if (below_amount + excess) > MAX_WATER:
+                # Can't fit all excess below, keep some here
+                transfer = MAX_WATER - below_amount
+                self.next_grid[y, x] = water_amount - transfer
+                self.next_grid[y + 1, x] = MAX_WATER
+            else:
+                # Transfer all excess
                 self.next_grid[y, x] = EMPTY
-                self.next_grid[ny, nx] = water_amount
+                self.next_grid[y + 1, x] = below_amount + (water_amount - MIN_WATER)
+            return
 
-            # Water can flow downward diagonally
-            elif self._is_empty(x - 1, y + 1) or self._is_empty(x + 1, y + 1):
-                options = []
-                if self._is_empty(x - 1, y + 1):
-                    options.append((x - 1, y + 1))
-                if self._is_empty(x + 1, y + 1):
-                    options.append((x + 1, y + 1))
+        # 4. HORIZONTAL FLOW
+        left_empty = self._is_empty(x - 1, y)
+        right_empty = self._is_empty(x + 1, y)
 
-                if options:
-                    nx, ny = random.choice(options)
-                    self.next_grid[y, x] = EMPTY
-                    self.next_grid[ny, nx] = water_amount
+        if left_empty or right_empty:
+            excess = water_amount - MIN_WATER
+            if excess > 0.5:
+                if left_empty and right_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 3
+                    self.next_grid[y, x - 1] = MIN_WATER + excess / 3
+                    self.next_grid[y, x + 1] = MIN_WATER + excess / 3
+                elif left_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 2
+                    self.next_grid[y, x - 1] = MIN_WATER + excess / 2
+                elif right_empty:
+                    self.next_grid[y, x] = MIN_WATER + excess / 2
+                    self.next_grid[y, x + 1] = MIN_WATER + excess / 2
+                return
+
+        # # 5. EQUALIZE WITH EXISTING WATER AT SIDES
+        # for dx in [-1, 1]:
+        #     nx = x + dx
+        #     if not self._is_within_bounds(nx, y):
+        #         continue
+        #
+        #     if self.next_grid[y, nx] >= MIN_WATER:
+        #         side_amount = self.next_grid[y, nx]
+        #         if water_amount > side_amount + 0.1:
+        #             transfer = (water_amount - side_amount) / 3
+        #             if transfer > 0.01:
+        #                 self.next_grid[y, x] = water_amount - transfer
+        #                 self.next_grid[y, nx] = side_amount + transfer
+        #
+        #
+        #
+
+        # 5. EQUALIZE WITH EXISTING WATER AT SIDES
+        # Collect information about water cells at sides
+        side_cells = []
+        total_water = water_amount
+        cells_count = 1  # Start with current cell
+
+        for dx in [-1, 1]:
+            nx = x + dx
+            if not self._is_within_bounds(nx, y):
+                continue
+            if self.next_grid[y, nx] >= MIN_WATER:
+                side_amount = self.next_grid[y, nx]
+                side_cells.append((nx, side_amount))
+                total_water += side_amount
+                cells_count += 1
+
+        if side_cells:
+            # Calculate equilibrium level
+            equilibrium = total_water / cells_count
+            self.next_grid[y, x] = equilibrium
+
+            for nx, side_amount in side_cells:
+                self.next_grid[y, nx] = equilibrium
+
+            return
+
+        # # 6. UPWARD FLOW (slightly lower threshold)
+        # if water_amount > 13.5 and y > 0 and self._is_empty(x, y - 1):
+        #     upward_flow = min(water_amount - 13, 1.5)
+        #     self.next_grid[y, x] = water_amount - upward_flow
+        #     self.next_grid[y - 1, x] = MIN_WATER + upward_flow
+        #     return
+
+        # Water stays in place if no other rules apply
+        self.next_grid[y, x] = water_amount
 
     def _update_balloon(self, x, y):
         """Update balloon behavior"""
@@ -381,7 +489,12 @@ class CellularAutomaton2D:
     def add_element(self, x, y, element_type):
         """Add an element at the specified position"""
         if 0 <= x < self.width and 0 <= y < self.height and self.grid[y, x] != WALL:
-            self.grid[y, x] = element_type
+            # self.grid[y, x] = element_type
+            if element_type == WATER:
+                # Random water amount between 8 and 15
+                self.grid[y, x] = 15
+            else:
+                self.grid[y, x] = element_type
 
             # Initialize smoke lifetime if needed
             if element_type in [DARK_SMOKE, LIGHT_SMOKE]:
@@ -481,7 +594,10 @@ def run_simulation(width, height):
         for y in range(height):
             for x in range(width):
                 cell_type = int(ca.grid[y, x])
-                if cell_type in COLORS:
+                if cell_type >= WATER and cell_type <= 15:
+                    # Use dynamic water color based on value
+                    rgb_grid[y, x] = get_water_color(ca.grid[y, x])
+                elif cell_type in COLORS:
                     rgb_grid[y, x] = COLORS[cell_type]
         img.set_array(rgb_grid)
         fig.canvas.draw_idle()
