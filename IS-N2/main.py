@@ -15,6 +15,8 @@ COHESION_WEIGHT = 1.0
 SEPARATION_WEIGHT = 1.2
 BOUNDARY_WEIGHT = 1.0
 SEEK_WEIGHT = 1.0
+COLLISION_RADIUS = 15
+PERSONAL_SPACE = 30
 
 
 class Boid:
@@ -81,7 +83,10 @@ class Boid:
 
         heading = self.velocity.normalize() if self.velocity.length() > 0 else Vector2(1, 0)
         direction = (other.position - self.position).normalize()
-        angle = math.degrees(math.acos(heading.dot(direction)))
+
+        # dot product in range [-1, 1]
+        dot_product = max(-1.0, min(1.0, heading.dot(direction)))
+        angle = math.degrees(math.acos(dot_product))  # absolute cos
 
         return angle <= self.vision_angle / 2
 
@@ -125,22 +130,29 @@ class Boid:
     def separation(self, boids):
         steering = Vector2(0, 0)
         total = 0
-        min_separation = 1
 
         for boid in boids:
             if boid != self:
                 dist = self.position.distance_to(boid.position)
                 if 0 < dist < PERCEPTION_RADIUS * 0.7 and self.is_in_vision(boid):
-                    # Stronger force for closer boids
+                    # Get direction away from neighbor
                     diff = self.position - boid.position
 
-                    # Apply greater force when too close
-                    if dist < min_separation:
-                        diff *= 3.0  # Much stronger separation when too close
+                    # Apply forces based on distance
+                    if dist < COLLISION_RADIUS:
+                        # strong repulsion to prevent collision
+                        diff.scale_to_length(self.max_force * 5.0)
+                        steering += diff
+                    elif dist < PERSONAL_SPACE:
+                        # add force within personal space (scaled by distance)
+                        force = 1.0 - (dist - COLLISION_RADIUS) / (PERSONAL_SPACE - COLLISION_RADIUS)
+                        diff.scale_to_length(self.max_force * 2.0 * force)
+                        steering += diff
                     else:
+                        # Normal separation
                         diff /= dist  # Weight by distance
+                        steering += diff
 
-                    steering += diff
                     total += 1
 
         if total > 0:
@@ -149,12 +161,12 @@ class Boid:
                 steering.scale_to_length(self.max_speed)
                 steering -= self.velocity
                 if steering.length() > self.max_force:
-                    steering.scale_to_length(self.max_force * 2.0)  # Allow stronger separation force
+                    steering.scale_to_length(self.max_force * 1.5)  # Allow stronger separation force
 
         return steering
 
     def boundary_behavior(self):
-        margin = 25
+        margin = 10
         next_pos = self.position + self.velocity
 
         # prevent going outside the screen
@@ -212,7 +224,6 @@ class Boid:
                     correction = (obstacle.radius - dist_next + 1)
                     self.position += away_vector * correction
 
-                    # Reflect velocity (bounce)
                     # Calculate reflection vector
                     normal = away_vector
                     reflection = self.velocity.reflect(normal)
@@ -221,11 +232,11 @@ class Boid:
         return False
 
     def flock(self, boids, obstacles=None, target=None):
-        # First check if we would collide with any obstacles
+        # check if we would collide with any obstacles
         if obstacles:
             collided = self.check_obstacle_collision(obstacles)
             if collided:
-                return  # Skip other behaviors if we just collided
+                return
 
         # Apply flocking behaviors
         alignment = self.align(boids) * ALIGNMENT_WEIGHT
@@ -238,21 +249,21 @@ class Boid:
         self.apply_force(separation)
         self.apply_force(boundary)
 
-        # Add some randomness to avoid circles
-        if random.random() < 0.01:  # 1% chance each frame
+        # randomness to avoid circles
+        if random.random() < 0.01:
             random_force = Vector2(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5))
             self.apply_force(random_force)
 
-        # Optional seek behavior if target is provided
+        # seek behavior if target is provided
         if target:
             seek = self.seek(target) * SEEK_WEIGHT
             self.apply_force(seek)
 
-        # Avoid obstacles - stronger prevention
+        # Avoid obstacles
         if obstacles:
             for obstacle in obstacles:
                 dist = self.position.distance_to(obstacle.position)
-                if dist < obstacle.radius + 40:  # Increased perception radius for obstacles
+                if dist < obstacle.radius + 40:
                     avoid = self.position - obstacle.position
                     if avoid.length() > 0:
                         avoid.scale_to_length(self.max_force * 3.0 * (1.0 - dist / (obstacle.radius + 40)))
@@ -262,7 +273,7 @@ class Boid:
         # Draw triangle in the direction of movement
         angle = math.atan2(self.velocity.y, self.velocity.x)
 
-        # Triangle vertices - fix the syntax error
+        # Triangle vertices
         points = [
             (self.position.x + self.size * math.cos(angle),
              self.position.y + self.size * math.sin(angle)),
@@ -288,41 +299,91 @@ class Obstacle:
         pygame.draw.circle(screen, (150, 150, 150), (int(self.position.x), int(self.position.y)), self.radius)
 
 
+class SpatialGrid:
+    def __init__(self, width, height, cell_size):
+        self.cell_size = cell_size
+        self.cols = math.ceil(width / cell_size)
+        self.rows = math.ceil(height / cell_size)
+        self.grid = {}  # Using a dictionary for sparse grid representation
+
+    def clear(self):
+        self.grid.clear()
+
+    def get_cell_index(self, x, y):
+        col = math.floor(x / self.cell_size)
+        row = math.floor(y / self.cell_size)
+        # Clamp within grid bounds
+        col = max(0, min(col, self.cols - 1))
+        row = max(0, min(row, self.rows - 1))
+        return (col, row)
+
+    def insert(self, boid):
+        cell_idx = self.get_cell_index(boid.position.x, boid.position.y)
+        if cell_idx not in self.grid:
+            self.grid[cell_idx] = []
+        self.grid[cell_idx].append(boid)
+
+    def get_neighbors(self, boid, radius):
+        neighbors = []
+        center_cell = self.get_cell_index(boid.position.x, boid.position.y)
+
+        # Calculate cells to check based on radius
+        cell_radius = math.ceil(radius / self.cell_size)
+        for i in range(-cell_radius, cell_radius + 1):
+            for j in range(-cell_radius, cell_radius + 1):
+                check_cell = (center_cell[0] + i, center_cell[1] + j)
+                if check_cell in self.grid:
+                    neighbors.extend(self.grid[check_cell])
+
+        return neighbors
+
 if __name__ == "__main__":
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("Boids Simulation")
     clock = pygame.time.Clock()
 
-    # Create two flocks of boids
+    # Create boids
+    NUM_FLOCKS = 2
     boids = []
-    for _ in range(30):
-        boids.append(Boid(random.randint(0, WIDTH), random.randint(0, HEIGHT), 0))
-    for _ in range(30):
-        boids.append(Boid(random.randint(0, WIDTH), random.randint(0, HEIGHT), 1))
+    for flock_id in range(NUM_FLOCKS):
+        for _ in range(random.randint(10, 30)):
+            boids.append(Boid(
+                random.randint(0, WIDTH),
+                random.randint(0, HEIGHT),
+                flock_id
+            ))
 
-    # Create some obstacles
-    obstacles = [
-        Obstacle(WIDTH / 2, HEIGHT / 2, 50),
-        Obstacle(WIDTH / 4, HEIGHT / 4, 30),
-        Obstacle(3 * WIDTH / 4, 3 * HEIGHT / 4, 40)
-    ]
+    # Create obstacles
+    obstacles = []
+    for _ in range(5):
+        radius = random.randint(30, 60)
+        x = random.randint(radius, WIDTH - radius)
+        y = random.randint(radius, HEIGHT - radius)
+
+        obstacles.append(Obstacle(x, y, radius))
 
     target = None
     running = True
+
+    grid = SpatialGrid(WIDTH, HEIGHT, PERCEPTION_RADIUS)
 
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                # Set target on mouse click
-                target = Vector2(pygame.mouse.get_pos())
+                target = Vector2(pygame.mouse.get_pos())  # set target on pos
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     target = None
 
         screen.fill(BACKGROUND_COLOR)
+
+        # Update spatial grid
+        grid.clear()
+        for boid in boids:
+            grid.insert(boid)
 
         # Update and draw obstacles
         for obstacle in obstacles:
