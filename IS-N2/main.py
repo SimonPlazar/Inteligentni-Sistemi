@@ -90,11 +90,13 @@ class Boid:
 
         return angle <= self.vision_angle / 2
 
-    def align(self, boids):
+    def align(self, grid):
         steering = Vector2(0, 0)
         total = 0
 
-        for boid in boids:
+        neighbors = grid.get_neighbors(self, PERCEPTION_RADIUS)
+
+        for boid in neighbors:
             if boid != self and boid.flock_id == self.flock_id:
                 dist = self.position.distance_to(boid.position)
                 if dist < PERCEPTION_RADIUS and self.is_in_vision(boid):
@@ -114,7 +116,9 @@ class Boid:
         steering = Vector2(0, 0)
         total = 0
 
-        for boid in boids:
+        neighbors = grid.get_neighbors(self, PERCEPTION_RADIUS)
+
+        for boid in neighbors:
             if boid != self and boid.flock_id == self.flock_id:
                 dist = self.position.distance_to(boid.position)
                 if dist < PERCEPTION_RADIUS and self.is_in_vision(boid):
@@ -131,7 +135,9 @@ class Boid:
         steering = Vector2(0, 0)
         total = 0
 
-        for boid in boids:
+        neighbors = grid.get_neighbors(self, PERCEPTION_RADIUS)
+
+        for boid in neighbors:
             if boid != self:
                 dist = self.position.distance_to(boid.position)
                 if 0 < dist < PERCEPTION_RADIUS * 0.7 and self.is_in_vision(boid):
@@ -366,7 +372,7 @@ if __name__ == "__main__":
     target = None
     running = True
 
-    grid = SpatialGrid(WIDTH, HEIGHT, PERCEPTION_RADIUS)
+    grid = SpatialGrid(WIDTH, HEIGHT, int(PERCEPTION_RADIUS/4))
 
     while running:
         for event in pygame.event.get():
@@ -391,7 +397,7 @@ if __name__ == "__main__":
 
         # Update and draw boids
         for boid in boids:
-            boid.flock(boids, obstacles, target)
+            boid.flock(grid, obstacles, target)
             boid.update()
             boid.draw(screen)
 
