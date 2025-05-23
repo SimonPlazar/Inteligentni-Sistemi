@@ -428,5 +428,12 @@ if __name__ == "__main__":
 
     # process_all_fonts("abeceda", "output_abeceda", width_div=4, height_div=4, file_count=-1)
 
-    extract_features_from_saved_cells("output_abeceda", "output_features", width_div=4, height_div=4)
+    # extract_features_from_saved_cells("output_abeceda", "output_features", width_div=4, height_div=4)
+
+    list = [2,3,5,10,25,50]
+    for i in list:
+        print(f"width_div: {i}, height_div: {i}")
+        extract_features_from_saved_cells("output_abeceda", "output_features", width_div=i, height_div=i)
+
+    extract_features_from_saved_cells("output_abeceda", "output_features", width_div=10, height_div=7)
 
