@@ -184,7 +184,8 @@ def calculate_quadrant_features(quadrant):
         gray = quadrant
 
     # Threshold to separate dark and light pixels
-    _, binary = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY)
+    # _, binary = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY)
+    binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 10)
 
     # Calculate features
     total_pixels = quadrant.size // (3 if len(quadrant.shape) > 2 else 1)
@@ -290,42 +291,90 @@ def process_single_image(image_path, output_dir, font_dir, features_file, width_
     if i != 24 or j != 49:
         raise Exception(f"Last cell is not at the expected position (24, 49), but at ({i}, {j})")
 
-    abeceda = ["A", "B", "C", "C^", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "R", "S", "S^", "T", "U", "V", "Z", "Z^"]
+    extract_features_from_cells(cells, output_dir, font_dir, features_file, 10, 7, True)
+    list = [2, 3, 5, 10, 25, 50]
+    for i in list:
+        extract_features_from_cells(cells, output_dir, font_dir, features_file, i, i, False)
 
-    # Loop through cells with proper row/column indices
-    for cell in cells:
-        (x1, y1), (x2, y2), cell_img, (i, j) = cell
 
-        # Create filename using row/column indices
-        cell_filename = f"{font_dir}_{abeceda[i]}_{j}.png"
-        cell_path = os.path.join(output_dir, cell_filename)
+def extract_features_from_cells(cells, output_dir, font_label, features_file, width_div, height_div, first):
+    abeceda = ["A", "B", "C", "C^", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "R", "S", "S^",
+               "T", "U", "V", "Z", "Z^"]
 
-        # Save the actual image data
-        cv2.imwrite(cell_path, cell_img)
+    with open(features_file, 'a') as f:
+        for (x1, y1), (x2, y2), cell_img, (i, j) in cells:
+            cell_filename = f"{font_label}_{abeceda[i]}_{j}.png"
+            if first:
+                cell_path = os.path.join(output_dir, cell_filename)
+                cv2.imwrite(cell_path, cell_img)
 
-        # Process quadrants and extract features
-        quadrants = divide_into_quadrants(cell_img, width_div, height_div)
+            quadrants = divide_into_quadrants(cell_img, width_div, height_div)
+            row_data = [f"{font_label}_{abeceda[i]}"]
 
-        # Save features for each quadrant
-        row_data = [font_dir + "_" + abeceda[i]] # Start with the type
-        for quad_row, quad_col, quadrant in quadrants:
-            features = calculate_quadrant_features(quadrant)
-            row_data.append(str(round(features, 4)))
+            for _, _, quadrant in quadrants:
+                feature = calculate_quadrant_features(quadrant)
+                row_data.append(str(round(feature, 4)))
 
-        with open(features_file, 'a') as f:
             f.write(",".join(row_data) + "\n")
 
 
-def find_and_copy_missing_files(source_dir, target_dir, output_dir):
-    """
-    Find files that exist in target_dir but are missing in source_dir by filename only,
-    then copy them to output_dir.
+def extract_features_from_saved_cells(saved_cells_base_dir, output_base_dir, width_div=4, height_div=4):
+    output_dir = os.path.join(output_base_dir, f"features_{width_div}x{height_div}")
 
-    Args:
-        source_dir: Directory to check for existing files (abeceda)
-        target_dir: Directory with files to check against (abeceda_testing)
-        output_dir: Directory where to copy missing files
-    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    base_features_file = os.path.join(output_dir, "base_features.csv")
+
+    # Pripravi header
+    header = ["letter_type"] + [f"quadrant_{i}_{j}" for i in range(height_div) for j in range(width_div)]
+
+    # Ustvari base features file
+    with open(base_features_file, 'w', encoding='utf-8') as f:
+        f.write(",".join(header) + "\n")
+
+    for font_dir in os.listdir(saved_cells_base_dir):
+        font_path = os.path.join(saved_cells_base_dir, font_dir)
+        if not os.path.isdir(font_path):
+            continue
+
+        # Ustvari CSV za posamezen font_dir
+        font_features_file = os.path.join(output_dir, f"{font_dir}_features.csv")
+        with open(font_features_file, 'w', encoding='utf-8') as f:
+            f.write(",".join(header) + "\n")
+
+        for image_folder in os.listdir(font_path):
+            image_folder_path = os.path.join(font_path, image_folder)
+            if not os.path.isdir(image_folder_path):
+                continue
+
+            print(f"Processing: {image_folder_path}")
+
+            for cell_file in sorted(os.listdir(image_folder_path)):
+                if not cell_file.endswith(".png"):
+                    continue
+
+                cell_path = os.path.join(image_folder_path, cell_file)
+                cell_img = cv2.imread(cell_path)
+                if cell_img is None:
+                    print(f"Could not read: {cell_path}")
+                    continue
+
+                quadrants = divide_into_quadrants(cell_img, width_div, height_div)
+                row_data = ["_".join(cell_file.split(".")[0].split("_")[:-1])]
+
+                for _, _, quadrant in quadrants:
+                    feature = calculate_quadrant_features(quadrant)
+                    row_data.append(str(round(feature, 4)))
+
+                # Dodaj vrstico v oba CSV-ja
+                line = ",".join(row_data) + "\n"
+                with open(base_features_file, 'a', encoding='utf-8') as f:
+                    f.write(line)
+                with open(font_features_file, 'a', encoding='utf-8') as f:
+                    f.write(line)
+
+
+def find_and_copy_missing_files(source_dir, target_dir, output_dir):
     import os
     import shutil
 
@@ -359,22 +408,37 @@ def find_and_copy_missing_files(source_dir, target_dir, output_dir):
     print(f"Total files copied: {len(missing_files)}")
     return missing_files
 
+
+def test():
+    input_base_dir = "abeceda"
+
+    for font_dir in ["vlke_tiskane", "vlke_pisane", "male_tiskane", "male_pisane"]:
+        input_font_dir = os.path.join(input_base_dir, font_dir)
+
+        # Skip if directory doesn't exist
+        if not os.path.exists(input_font_dir):
+            print(f"Directory {input_font_dir} not found, skipping...")
+            continue
+
+        # Process each image in the font directory
+        for filename in os.listdir(input_font_dir):
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                image_path = os.path.join(input_font_dir, filename)
+                process_table_image(image_path)
+
+
 if __name__ == "__main__":
-    # input_base_dir = "abeceda"
-    #
-    # for font_dir in ["vlke_tiskane", "vlke_pisane", "male_tiskane", "male_pisane"]:
-    #     input_font_dir = os.path.join(input_base_dir, font_dir)
-    #
-    #     # Skip if directory doesn't exist
-    #     if not os.path.exists(input_font_dir):
-    #         print(f"Directory {input_font_dir} not found, skipping...")
-    #         continue
-    #
-    #     # Process each image in the font directory
-    #     for filename in os.listdir(input_font_dir):
-    #         if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-    #             image_path = os.path.join(input_font_dir, filename)
-    #             process_table_image(image_path)
+    # test()
 
     # find_and_copy_missing_files("abeceda", "abeceda_testing", "missing_files")
-    process_all_fonts("abeceda", "output_abeceda", width_div=4, height_div=4, file_count=-1)
+
+    # process_all_fonts("abeceda", "output_abeceda", width_div=4, height_div=4, file_count=-1)
+
+    extract_features_from_saved_cells("output_abeceda", "output_features", width_div=4, height_div=4)
+
+    # list = [2,3,5,10,25,50]
+    # for i in list:
+    #     print(f"width_div: {i}, height_div: {i}")
+    #     extract_features_from_saved_cells("output_abeceda", "output_features", width_div=i, height_div=i)
+    #
+    # extract_features_from_saved_cells("output_abeceda", "output_features", width_div=10, height_div=7)
