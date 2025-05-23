@@ -184,7 +184,8 @@ def calculate_quadrant_features(quadrant):
         gray = quadrant
 
     # Threshold to separate dark and light pixels
-    _, binary = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY)
+    # _, binary = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY)
+    binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 10)
 
     # Calculate features
     total_pixels = quadrant.size // (3 if len(quadrant.shape) > 2 else 1)
@@ -290,30 +291,32 @@ def process_single_image(image_path, output_dir, font_dir, features_file, width_
     if i != 24 or j != 49:
         raise Exception(f"Last cell is not at the expected position (24, 49), but at ({i}, {j})")
 
-    abeceda = ["A", "B", "C", "C^", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "R", "S", "S^", "T", "U", "V", "Z", "Z^"]
+    extract_features_from_cells(cells, output_dir, font_dir, features_file, 10, 7, True)
+    list = [2, 3, 5, 10, 25, 50]
+    for i in list:
+        extract_features_from_cells(cells, output_dir, font_dir, features_file, i, i, False)
 
-    # Loop through cells with proper row/column indices
-    for cell in cells:
-        (x1, y1), (x2, y2), cell_img, (i, j) = cell
 
-        # Create filename using row/column indices
-        cell_filename = f"{font_dir}_{abeceda[i]}_{j}.png"
-        cell_path = os.path.join(output_dir, cell_filename)
+def extract_features_from_cells(cells, output_dir, font_label, features_file, width_div, height_div, first):
+    abeceda = ["A", "B", "C", "C^", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "R", "S", "S^",
+               "T", "U", "V", "Z", "Z^"]
 
-        # Save the actual image data
-        cv2.imwrite(cell_path, cell_img)
+    with open(features_file, 'a') as f:
+        for (x1, y1), (x2, y2), cell_img, (i, j) in cells:
+            cell_filename = f"{font_label}_{abeceda[i]}_{j}.png"
+            if first:
+                cell_path = os.path.join(output_dir, cell_filename)
+                cv2.imwrite(cell_path, cell_img)
 
-        # Process quadrants and extract features
-        quadrants = divide_into_quadrants(cell_img, width_div, height_div)
+            quadrants = divide_into_quadrants(cell_img, width_div, height_div)
+            row_data = [f"{font_label}_{abeceda[i]}"]
 
-        # Save features for each quadrant
-        row_data = [font_dir + "_" + abeceda[i]] # Start with the type
-        for quad_row, quad_col, quadrant in quadrants:
-            features = calculate_quadrant_features(quadrant)
-            row_data.append(str(round(features, 4)))
+            for _, _, quadrant in quadrants:
+                feature = calculate_quadrant_features(quadrant)
+                row_data.append(str(round(feature, 4)))
 
-        with open(features_file, 'a') as f:
             f.write(",".join(row_data) + "\n")
+
 
 def extract_features_from_saved_cells(saved_cells_base_dir, output_base_dir, width_div=4, height_div=4):
     output_dir = os.path.join(output_base_dir, f"features_{width_div}x{height_div}")
@@ -370,6 +373,7 @@ def extract_features_from_saved_cells(saved_cells_base_dir, output_base_dir, wid
                 with open(font_features_file, 'a', encoding='utf-8') as f:
                     f.write(line)
 
+
 def find_and_copy_missing_files(source_dir, target_dir, output_dir):
     import os
     import shutil
@@ -404,6 +408,7 @@ def find_and_copy_missing_files(source_dir, target_dir, output_dir):
     print(f"Total files copied: {len(missing_files)}")
     return missing_files
 
+
 def test():
     input_base_dir = "abeceda"
 
@@ -421,6 +426,7 @@ def test():
                 image_path = os.path.join(input_font_dir, filename)
                 process_table_image(image_path)
 
+
 if __name__ == "__main__":
     # test()
 
@@ -428,12 +434,11 @@ if __name__ == "__main__":
 
     # process_all_fonts("abeceda", "output_abeceda", width_div=4, height_div=4, file_count=-1)
 
-    # extract_features_from_saved_cells("output_abeceda", "output_features", width_div=4, height_div=4)
+    extract_features_from_saved_cells("output_abeceda", "output_features", width_div=4, height_div=4)
 
-    list = [2,3,5,10,25,50]
-    for i in list:
-        print(f"width_div: {i}, height_div: {i}")
-        extract_features_from_saved_cells("output_abeceda", "output_features", width_div=i, height_div=i)
-
-    extract_features_from_saved_cells("output_abeceda", "output_features", width_div=10, height_div=7)
-
+    # list = [2,3,5,10,25,50]
+    # for i in list:
+    #     print(f"width_div: {i}, height_div: {i}")
+    #     extract_features_from_saved_cells("output_abeceda", "output_features", width_div=i, height_div=i)
+    #
+    # extract_features_from_saved_cells("output_abeceda", "output_features", width_div=10, height_div=7)
